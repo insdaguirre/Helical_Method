@@ -1,0 +1,397 @@
+**Importing Data & Libraries**
+
+```{r}
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(tidyr)
+
+
+
+
+library(readxl)
+Balmer_Data <- read_excel("~/balmer-series/balmer_data_fin.xlsx")
+
+
+
+```
+
+**Calculating Rydberg Constant Valuess**
+
+```{r}
+
+#Wavelengths
+
+
+data <- Balmer_Data |>
+  mutate(
+    theta_rad = theta * pi / 180,
+    theta_rad = signif(theta_rad, digits = 5)
+    )
+
+data$theta_rad <-signif(data$theta_rad, digits = 5)
+
+
+
+data$spacing = 1.6666666666666667e-06
+data$lambda <- data$spacing * sin(data$theta_rad)
+
+
+data$lambda <- signif(data$lambda,  digits = 5)
+
+#Rydberg Values
+red_df <- data |>
+  filter(color %in% c("red"))
+cyan_df <- data |>
+  filter(color %in% c("cyan"))
+violet_df <- data |>
+  filter(color %in% c("violet"))
+
+red_df <- red_df |>
+  mutate(
+    R = (36/5) * (1 / lambda)
+  )
+
+cyan_df <- cyan_df |>
+  mutate(
+    R = (16/3) * (1 / lambda)
+  )
+  
+
+violet_df <- violet_df |>
+  mutate(
+    R = 4.7619 * (1 / lambda)
+  )
+
+balmer_data <- rbind(red_df, cyan_df, violet_df)
+r_val <- 10973731.6
+
+
+balmer_data$R <- signif(data$R, digits = 5)
+balmer_data$theta_rad <- signif(data$theta_rad, digits = 5)
+
+
+#Mean and Standard Dev of Rydberg Values
+balmer_stats <- balmer_data |>
+  summarise(
+    avg = mean(R, na.rm = TRUE),
+    std_dev = sd(R, na.rm = TRUE)
+  )
+
+balmer_stats
+
+
+
+calculate_percent_error <- function(experimental, theoretical) {
+  percent_error <- (experimental - theoretical) / theoretical * 100
+  return(percent_error)
+}
+
+
+e <- 10950180
+t <- r_val
+
+balmer_error <- calculate_percent_error(e,t)
+balmer_error
+
+r_exp_vals <- balmer_data |>
+  select(R)
+
+r_exp_mu <- 10951388	
+r_exp_sd <- 88578.43	
+
+t.test(r_exp_vals, mu = r_val)
+
+balmer_data <- balmer_data|>
+  mutate(
+    color = case_when(
+      color == "cyan" ~ "1red",
+      color == "red" ~ "2violet",
+      color == "violet" ~ "3cyan",
+      TRUE ~ color  # This keeps any other values unchanged
+    )
+  )
+
+balmer_data <- balmer_data |>
+    mutate(
+    color = case_when(
+      color == "1red" ~ "red",
+      color == "2violet" ~ "violet",
+      color == "3cyan" ~ "cyan",
+      TRUE ~ color  # This keeps any other values unchanged
+    )
+  )
+
+  
+
+
+
+lab_data <- balmer_data |>
+  select(color, left_angle, right_angle, vernier, theta, theta_rad, lambda, R) |>
+  rename(
+    Color = color,
+    `Left Angle` = left_angle,
+    `Right Angle` = right_angle,
+    `Vernier` = vernier,
+    `Theta (deg)` = theta,
+    `Theta (rad)` = theta_rad,
+    `Lambda (m)` = lambda,
+    `Rydberg (1/m)` = R
+  ) 
+  
+
+```
+
+**Distribution of Rydberg Values**
+
+```{r}
+
+ggplot(data = balmer_data, mapping = aes(x = R, fill = color))+
+  geom_bar(width = 2500)+
+  scale_fill_manual(values = c("violet" = "violet", "cyan" = "cyan", "red" = "red"))+
+  scale_y_continuous(breaks = c(0,1,2))+
+  scale_x_continuous()+
+  geom_vline(xintercept = r_val, color = "green", linetype = "dashed", size = 1.5)+
+  labs(
+    title = "Fig 4 - Calculated Values for Rydberg Constant",
+    subtitle = "Note: Green Dashed Line represents actual value",
+    x = "Value in Units of 1/m",
+    y = "Count"
+  ) +
+  guides(fill = FALSE)+
+  theme_minimal()
+  
+
+```
+
+**Histogram of R Values by Spectra**
+
+```{r}
+
+ggplot(data = balmer_data, mapping = aes(x = R, fill = color))+
+  geom_histogram(binwidth = 15000)+
+  scale_x_continuous(labels = scientific_format())+
+  scale_fill_manual(values = c("cyan" = "cyan", "red" = "red", "violet" = "violet"))+
+  geom_vline(xintercept = r_val, color = "green", linetype = "dashed", size = 1.5)+
+  facet_wrap(~ color)+
+  guides(fill = FALSE)+
+  labs(
+    title = "Fig 5 - Histogram of Rydberg Values by Spectra",
+    subtitle = "Note: Dashed Green Line represents actual value",
+    y = "Frequency",
+    x = "Rydberg Constant Value (1/m)"
+  )
+```
+
+**Box Plot of Rydberg Values by Color**
+
+```{r}
+
+ggplot(balmer_data, mapping = aes(x = color, y = R, color = color))+
+  geom_boxplot()+
+  scale_color_manual(values = c("red" = "red", "cyan" = "cyan", "violet" = "violet"))+
+  geom_hline(yintercept = r_val, color = "green", linetype = "dashed", size = 1)+
+  guides(color = FALSE)+
+  labs(
+    title = "Fig 6B - Box Plot of Rydberg Values by Spectra Color",
+    x = "Color of Spectral Line",
+    y = "Rydberg Constant Value (1 / m)",
+    subtitle = "Note: Green Dashed Line represents actual value"
+  )
+         
+
+```
+
+**Null - Box Plot of Rydberg Values by Vernier**
+
+```{r}
+balmer_data |>
+  group_by(vernier) |>
+  ggplot(mapping = aes(group = vernier, x = vernier, y = R))+
+    geom_boxplot()+
+    scale_x_continuous(breaks = c(1,2))+
+    geom_hline(yintercept = r_val, color = "green", linetype = "dashed", size = 1)+
+    guides(color = FALSE)+
+    labs(
+      title = "Fig 6B - Box Plot of Rydberg Values by Spectra Color",
+      x = "Color of Spectral Line",
+      y = "Rydberg Constant Value (1 / m)",
+      subtitle = "Note: Green Dashed Line represents actual value"
+    )
+         
+    
+    
+
+```
+
+**Box Plot of Rydberg Values**
+
+```{r}
+
+ggplot(balmer_data, mapping = aes(y = R))+
+  geom_boxplot()+
+  geom_hline(yintercept = r_val, color = "green", linetype = "dashed", size = 1)+
+  labs(
+      title = "Fig 6A - Box Plot of Rydberg Values",
+      y = "Rydberg Constant Value (1 / m)",
+      subtitle = "Note: Green Dashed Line represents actual value"
+  )+
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+```
+
+**SD of R by Color**
+
+```{r}
+
+sd_data <- balmer_data |>
+  group_by(color) |>
+  summarise(std = sd(R, na.rm = TRUE))
+            
+            
+sd_data
+
+ggplot(sd_data, mapping = aes(x = color, y = std, fill = color))+
+  geom_col()+
+  scale_fill_manual(values = c("red" = "red", "cyan" = "cyan", "violet" = "violet"))+
+  guides(fill = FALSE)+
+  labs(
+    title = "Fig 7 - SD in Rydberg Values by Color",
+    x = "Color of Spectra",
+    y = "Sample SD (1/m)"
+  )
+
+
+```
+
+**Difference from Actual Value by Color**
+
+```{r}
+
+balmer_data |>
+  mutate(dif = R - r_val ) |>
+  ggplot(mapping = aes(y = color, x = dif, color = color))+
+    geom_point()+
+    geom_vline(xintercept = 0, color = "green", size = 1)+
+    scale_color_manual(values = c("red" = "red", "cyan" = "cyan", "violet" = "violet"))+
+    scale_x_continuous(labels = label_number())+
+    guides(color = FALSE)+
+    labs(
+      title = "Fig 8A - Deviations from Actual Rydberg Value by Color",
+      subtitle = "Note: Green Line Represents Actual Rydberg Value",
+      x = "Deviation from Actual Rydberg Value (1/m)",
+      y = "Color of Spectra Line "
+    )
+    
+    
+```
+
+**Box Plot of Differences**
+
+```{r}
+
+balmer_data |>
+  mutate(dif = r_val - R ) |>
+  ggplot(mapping = aes(y = color, x = dif, color = color))+
+    geom_boxplot()+
+    scale_color_manual(values = c("red" = "red", "cyan" = "cyan", "violet" = "violet"))+
+    scale_x_continuous(labels = label_number())+
+    guides(color = FALSE)+
+    geom_vline(xintercept = 0, color = "green", size = 1)+
+    labs(
+      title = "Figure 8B - Box Plot of Distribtion of Deviations by Spectra Color",
+      subtitle = "Note: Green Line represents actual Rydberg Value",
+      x = "Deviation from Actual Rydberg Value (1/m)",
+      y = "Color of Spectra Line"
+    )
+
+
+```
+
+**Angle Analysis**
+
+```{r}
+
+angle_data_2 <- balmer_data |>
+  select(color, vernier, theta, R) |>
+  filter(vernier %in% 2) |>
+  mutate(theta = 180 - theta)
+
+
+angle_data_1 <- balmer_data |>
+  select(color, vernier, theta, R) |>
+  filter(vernier %in% 1)
+
+
+angle_data <- rbind(angle_data_1, angle_data_2)
+
+
+library(dplyr)
+
+# Calculate the average R for vernier = 1 and vernier = 2, then compute the percent difference
+result_data <- angle_data %>%
+  group_by(color) %>%
+  summarize(
+    avg_R_vernier1 = mean(R[vernier == 1], na.rm = TRUE),
+    avg_R_vernier2 = mean(R[vernier == 2], na.rm = TRUE),
+    percent_difference = (avg_R_vernier2 - avg_R_vernier1) / avg_R_vernier1 * 100
+  )
+
+# View the resulting data frame
+result_R <- result_data |>
+  rename(
+    `Mean R Vern 1` = avg_R_vernier1,
+    `Mean R Vern 2` = avg_R_vernier2,
+    `% Difference` = percent_difference
+  )
+
+
+
+
+
+
+
+results <- angle_data |>
+  # Group by color
+  group_by(color) |>
+  # Calculate the average theta for vernier = 1 and vernier = 2
+  summarise(
+    theta_1 = mean(theta[vernier == 1], na.rm = TRUE),
+    theta_2 = mean(theta[vernier == 2], na.rm = TRUE)
+  ) |>
+  # Calculate percent difference between the two averages
+  mutate(
+    percent_difference = 100 * abs(theta_1 - theta_2) / 
+                         ((theta_1 + theta_2) / 2)
+  )
+
+results$percent_difference =  signif(results$percent_difference,  digits = 5)
+
+test_results <- angle_data %>%
+  group_by(color) %>%
+  summarise(
+    t_statistic = t.test(theta[vernier == 1], theta[vernier == 2])$statistic,
+    p_value = t.test(theta[vernier == 1], theta[vernier == 2])$p.value
+  )
+
+# Print the results
+print(test_results)
+
+results <- results |>
+  rename(
+    `Color` = color,
+    `Mean Theta Vern 1` = theta_1,
+    `Mean Theta Vern 2` = theta_2,
+    `% Difference`= percent_difference
+  )
+
+results
+  
+
+
+
+```
